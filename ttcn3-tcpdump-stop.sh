@@ -70,13 +70,16 @@ rm $FIFO
 # Add a numeral suffix to subsequent runs of the same test:
 PCAP_FILENAME=$TTCN3_PCAP_PATH/$TESTCASE.pcap
 if [ -f "$TTCN3_PCAP_PATH/$TESTCASE.pcap.gz" ]; then
-       i=1
-       while [ -f "$TTCN3_PCAP_PATH/$TESTCASE.$i.pcap.gz" ];
-               do i=$((i+1))
-       done
-       mv "$PCAP_FILENAME" "$TTCN3_PCAP_PATH/$TESTCASE.$i.pcap"
-       PCAP_FILENAME="$TTCN3_PCAP_PATH/$TESTCASE.$i.pcap"
+	i=1
+	while [ -f "$TTCN3_PCAP_PATH/$TESTCASE.$i.pcap.gz" ];
+		do i=$((i+1))
+	done
+	mv "$PCAP_FILENAME" "$TTCN3_PCAP_PATH/$TESTCASE.$i.pcap"
+	PCAP_FILENAME="$TTCN3_PCAP_PATH/$TESTCASE.$i.pcap"
 fi
-gzip -f "$PCAP_FILENAME"
+
+if [ "${TTCN3_PCAP_COMPRESS:-1}" != "0" ]; then
+	gzip -f "$PCAP_FILENAME"
+fi
 
 rm -f "$TTCN3_PCAP_PATH/.current_test"

@@ -8,6 +8,7 @@ COPY	obs.key /obs.key
 # Install packages from Debian repositories (alphabetic order)
 ENV	DEBIAN_FRONTEND=noninteractive
 RUN	set -x && \
+	KERNEL_PKG="linux-image-$(dpkg --print-architecture)" && \
 	mkdir -p /etc/kernel/postinst.d && \
 	touch /etc/kernel/postinst.d/initramfs-tools && \
 	apt-get update && \
@@ -55,6 +56,7 @@ RUN	set -x && \
 		libnl-route-3-dev \
 		libortp-dev \
 		libpcap-dev \
+		libcap2-bin \
 		libpcsclite-dev \
 		libsctp-dev \
 		libsofia-sip-ua-glib-dev \
@@ -68,7 +70,7 @@ RUN	set -x && \
 		libusb-1.0-0-dev \
 		libyaml-dev \
 		libzmq3-dev \
-		linux-image-amd64 \
+		$KERNEL_PKG \
 		meson \
 		netcat-openbsd \
 		pax-utils \
@@ -97,6 +99,12 @@ RUN	set -x && \
 		&& \
 	apt-get clean
 
+# Allow dumpcap to capture without root
+RUN	setcap cap_net_admin,cap_net_raw=ep /usr/bin/dumpcap || true
+
+# restop.py depends on erlang-py
+RUN	pip3 install erlang-py --break-system-packages
+
 # Install newer libcurl4 from bookworm-backports, libcurl4 7.88.1-10+deb12u12
 # shipped with debian12 is buggy and generates wrong HTTP2 for open5gs.
 ENV	BACKPORTS_SOURCES_LIST="/etc/apt/sources.list.d/debian-backports.sources"
@@ -124,8 +132,7 @@ RUN	set -x && \
 # dependencies that we don't need:
 # https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1083096
 RUN	wget https://github.com/erlang/rebar3/releases/download/3.24.0/rebar3 -O /usr/bin/rebar3 && \
-	chmod +x /usr/bin/rebar3 && \
-	rebar3 --version
+	chmod +x /usr/bin/rebar3
 
 # Ccache is installed above so it can be optionally used when rebuilding the
 # testsuites inside the docker containers. Don't use it by default.
@@ -135,18 +142,26 @@ ENV	USE_CCACHE=0
 ENV	LIBFFTRANSCODE_VERSION="0.6"
 RUN	set -x && \
 	export DPKG_ARCH="$(dpkg --print-architecture)" && \
-	wget https://ftp.osmocom.org/binaries/libfftranscode/libfftranscode0_${LIBFFTRANSCODE_VERSION}_${DPKG_ARCH}.deb && \
-	wget https://ftp.osmocom.org/binaries/libfftranscode/libfftranscode-dev_${LIBFFTRANSCODE_VERSION}_${DPKG_ARCH}.deb && \
-	dpkg -i ./libfftranscode0_${LIBFFTRANSCODE_VERSION}_${DPKG_ARCH}.deb ./libfftranscode-dev_${LIBFFTRANSCODE_VERSION}_${DPKG_ARCH}.deb && \
-	apt-get install --fix-broken && \
-	rm libfftranscode*.deb
+	if [ "$DPKG_ARCH" = "amd64" ]; then \
+		wget https://ftp.osmocom.org/binaries/libfftranscode/libfftranscode0_${LIBFFTRANSCODE_VERSION}_${DPKG_ARCH}.deb && \
+		wget https://ftp.osmocom.org/binaries/libfftranscode/libfftranscode-dev_${LIBFFTRANSCODE_VERSION}_${DPKG_ARCH}.deb && \
+		dpkg -i ./libfftranscode0_${LIBFFTRANSCODE_VERSION}_${DPKG_ARCH}.deb ./libfftranscode-dev_${LIBFFTRANSCODE_VERSION}_${DPKG_ARCH}.deb && \
+		apt-get install --fix-broken && \
+		rm libfftranscode*.deb; \
+	else \
+		echo "Skipping libfftranscode for $DPKG_ARCH"; \
+	fi
 
 # Install osmo-python-tests (for obtaining talloc reports from SUT)
-ADD	https://gerrit.osmocom.org/plugins/gitiles/python/osmo-python-tests/+/master?format=TEXT /tmp/osmo-python-tests-commit
 RUN	set -x && \
-	git clone --depth=1 https://gerrit.osmocom.org/python/osmo-python-tests osmo-python-tests && \
-	pip3 install ./osmo-python-tests --break-system-packages && \
-	rm -rf osmo-python-tests
+	if wget -q -O /tmp/osmo-python-tests-commit \
+		https://gerrit.osmocom.org/plugins/gitiles/python/osmo-python-tests/+/master?format=TEXT; then \
+		git clone --depth=1 https://gerrit.osmocom.org/python/osmo-python-tests osmo-python-tests && \
+		pip3 install ./osmo-python-tests --break-system-packages && \
+		rm -rf osmo-python-tests; \
+	else \
+		echo "Skipping osmo-python-tests install"; \
+	fi
 
 # Add eclipse-titan from osmocom:latest
 RUN	set -x && \
